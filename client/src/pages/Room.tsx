@@ -313,6 +313,14 @@ function Room(): JSX.Element {
     }
   }, []);
 
+  // Function to take percentage of seek, convert to seconds,
+  // and set the seconds to the remote file stream current time value
+  const handleRemoteFilePeek = (seekFrac: number) => {
+    if (fileVideoRef.current) {
+      fileVideoRef.current.currentTime = (seekFrac) * fileVideoRef.current.duration;
+    }
+  };
+
   useEffect(() => {
     const handleDataChannelMessage = (e: MessageEvent) => {
       const message = JSON.parse(e.data);
@@ -332,9 +340,13 @@ function Room(): JSX.Element {
           setRemoteBuffering(false);
           setRemoteNextBuffering(false);
         } else {
+          clearInterval(interval);
+          interval = undefined;
+          setFileUrl(null);
+          setRemoteFileStream(null);
+          setFileExists(false);
           setVdurl(message.content);
           setVideo(message.content);
-          setFileExists(false);
         }
       } else if (message.type === "videoCtrl" && message.content === "pause") {
         setPlayVideo(false);
@@ -355,9 +367,10 @@ function Room(): JSX.Element {
       } else if (message.type === "videoCtrl" && message.content === "loop") {
         setLoop(message.enable);
       } else if (message.type === "seekTo") {
-        // TODO: Add function to take percentage of seek, convert to seconds,
-        // and set the seconds to the remote file stream current time value
-        watchRef?.current.seekTo(message.content);
+        if (message.video === "file")
+          handleRemoteFilePeek(message.content);
+        else if (message.video === "yt")
+          watchRef?.current.seekTo(message.content);
       } else if (message.type === "mediaReceiving") {
         receiveType = message.content;
         if (receiveType === "videoFile") {
@@ -393,47 +406,6 @@ function Room(): JSX.Element {
       }
     };
   }, [localBuffering, watchRef]);
-
-  useEffect(() => {
-    sendStreams();
-  }, [localStream]);
-
-  // Handle remote stream.
-  useEffect(() => {
-
-    // Confirm if the successful peer connection exists.
-    if (peer.peer) {
-
-      // Create a reference to the event handler function
-      const handleTrack = async (ev: RTCTrackEvent) => {
-        const streams = ev.streams;
-        // If track is of type file, set the remote stream as the file stream.
-        if (receiveType === 'videoFile') {
-          setRemoteFileStream(streams[0]);
-        } else {    // Else set the remote stream as the video stream.
-          // If tracks exists then set the tracks else set the RemoteStream as null.
-          if (streams[0].getTracks().length > 0) {
-            setRemoteStream(streams[0]);
-          } else {
-            setRemoteStream(null);
-          }
-
-          // If video track exists then set the RemoteVideoExist as true else false.
-          setRemoteVideoExist(streams[0].getVideoTracks().length > 0);
-        }
-      };
-
-      // Add the event listener
-      peer.peer.addEventListener("track", handleTrack);
-
-      // Cleanup function
-      return () => {
-        if (peer.peer) {
-          peer.peer.removeEventListener("track", handleTrack);
-        }
-      };
-    }
-  }, []);
 
   const handleNegotiationNeeded = useCallback(async () => {
     if (socket) {
@@ -614,7 +586,10 @@ function Room(): JSX.Element {
 
   const sendNewPosition = (value: number) => {
     if (peer.dataChannel && peer.dataChannel.readyState == "open"){
-      peer.dataChannel.send(JSON.stringify({type: "seekTo", content: value}));
+      if (fileExists)
+        peer.dataChannel.send(JSON.stringify({type: "seekTo", video: "file", content: value}));
+      else
+        peer.dataChannel.send(JSON.stringify({type: "seekTo", video: "yt", content: value}));
     }
   }
 
@@ -661,7 +636,6 @@ function Room(): JSX.Element {
     handleDuration(fileVideoRef.current?.duration??0);
     interval = setInterval(() => {
       if (playVideo) {
-        console.log("Interval still exists!");
         getPlayedSecs(fileVideoRef?.current?.currentTime??0);
         const progressPer: number = (fileVideoRef.current?.currentTime??0) * 100 / (fileVideoRef.current?.duration??0);
         setVideoProgress(progressPer);
