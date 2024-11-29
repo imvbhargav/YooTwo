@@ -23,8 +23,8 @@ function Room(): JSX.Element {
   const socket = useSocket();
 
   // Boolean state variables to toggle audio and video.
-  const [ showMe, setShowMe ] = useState<boolean>(true);
-  const [ listenMe, setListenMe ] = useState<boolean>(true);
+  const [ showMe, setShowMe ] = useState<boolean>(false);
+  const [ listenMe, setListenMe ] = useState<boolean>(false);
 
   // State to store possible error getting audio or video.
   const [ error, setError ] = useState<string | null>(null);
