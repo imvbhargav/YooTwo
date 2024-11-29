@@ -329,7 +329,6 @@ function Room(): JSX.Element {
         setVideoProgress(message.progress);
         setPlayedSecs(message.progressSec);
       } else if (message.type === "mediaStatus" && message.content === "duration") {
-        console.log("Changed total duration in DC receiver!");
         setTotalDuration(message.duration);
       } else if (message.type === "mediaStatus" && message.content === "stopped") {
         setRemoteStream(null);
@@ -694,10 +693,6 @@ function Room(): JSX.Element {
       interval = undefined;
     }
   }, [fileExists]);
-
-  useEffect(() => {
-    console.log("Total duration changed: ", totalDuration);
-  }, [totalDuration]);
 
   return (
     <div className='w-full h-full bg-black/50 flex flex-col items-center'>
