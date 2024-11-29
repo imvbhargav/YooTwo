@@ -167,6 +167,7 @@ function Room(): JSX.Element {
   const handleURLSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (remoteSocketID) {
+      setPlayVideo(false);
       setVideo(vdurl);
       setFileExists(false)
     } else {
@@ -352,6 +353,8 @@ function Room(): JSX.Element {
         setPlayVideo(false);
       } else if (message.type === "videoCtrl" && message.content === "play") {
         setPlayVideo(true);
+      } else if (message.type === "ready") {
+        setPlayVideo(true);
       } else if (message.type === "videoCtrl" && message.content === "buffer") {
         if (localBuffering){
           setRemoteNextBuffering(true);
@@ -471,6 +474,9 @@ function Room(): JSX.Element {
   }
 
   const handleReady = () => {
+    if (peer.dataChannel && peer.dataChannel.readyState == "open"){
+      peer.dataChannel.send(JSON.stringify({type: "ready"}));
+    }
     const iframe = watchRef.current
       ?.getInternalPlayer()
       ?.getIframe?.();
