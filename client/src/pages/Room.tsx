@@ -197,7 +197,7 @@ function Room(): JSX.Element {
   // Inform of an existing user, set remote socket ID and username and emit an WebRTC offer.
   const handleUserAccepted = useCallback((data: any) => {
     if (socket && data.id !== socket.id) {
-      console.log(`User ${data.username} with ${data.id} is already here!`);
+      console.log(`User ${data.username} with ${data.id} is already here, Sending offer!`);
       setRemoteSocketID(data.id);
       setRemoteUsername(data.username);
       peer.getOffer().then((offer) => {
