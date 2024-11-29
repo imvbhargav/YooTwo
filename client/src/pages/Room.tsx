@@ -231,10 +231,9 @@ function Room(): JSX.Element {
 
   const handleReceivedNegotiation = useCallback((data: any)=> {
     if (socket && socket.id !== data.from) {
-      if (remoteSocketID)
-        peer.getAnswer(data.data.offer).then((ans) => {
-          socket.emit("negotiation:complete", {to: data.from, ans});
-        })
+      peer.getAnswer(data.data.offer).then((ans) => {
+        socket.emit("negotiation:complete", {to: data.from, ans});
+      })
     }
   }, []);
 
@@ -275,8 +274,7 @@ function Room(): JSX.Element {
   }, [socket, handleUserJoined, handleUserAccepted, handleOfferReceive, handleAnswerReceive, handleReceivedNegotiation, handleNegotiationComplete, handleRemoteUserLeft]);
 
   useEffect(() => {
-    if (remoteSocketID)
-      sendStreams();
+    sendStreams();
   }, [localStream]);
 
   // Handle remote stream.
@@ -411,7 +409,7 @@ function Room(): JSX.Element {
   }, [localBuffering, watchRef]);
 
   const handleNegotiationNeeded = useCallback(async () => {
-    if (socket && remoteSocketID) {
+    if (socket) {
       peer.getOffer().then((offer) => {
           console.log("Negotiation needed for successful WebRTC Handshake!", remoteSocketID);
           socket.emit("negotiate", {to: remoteSocketID, offer});
