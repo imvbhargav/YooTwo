@@ -189,13 +189,13 @@ function Lobby() {
   return (
     <div>
       {running &&
-        <div className="border-2 border-violet-500 absolute right-8 top-8 py-2">
+        <div className="border-2 border-violet-500 absolute right-6 sm:right-2 top-20 sm:top-2 py-2">
           <span style={{width: progress+"%"}} className={`absolute bg-violet-500 -z-10 h-full top-0 left-0`}></span>
           <span className="px-4 py-2">{msg}</span>
           <button className="px-4 py-2 text-red-700 font-black" onClick={handleProgressClose}>X</button>
         </div>
       }
-      <h1 className="text-[3rem] font-black text-center">
+      <h1 className="text-[3rem] font-black text-left">
         <span className=" bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">YooTwo</span>
       </h1>
       <div className='flex justify-center align-center min-h-screen md:px-56 lg:px-0'>
