@@ -83,7 +83,6 @@ io.on("connection", (socket) => {
 		}
 
 		// Notify the users in the room about the user accepting the request.
-		io.to(data.to).emit("user:here", data);
 		io.to(data.room).emit("user:here", data);
 	});
 
