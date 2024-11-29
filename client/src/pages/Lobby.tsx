@@ -100,7 +100,7 @@ function Lobby() {
   const handleSubmit = useCallback( (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (socket) {
-      socket.emit("room:join", {username, meetid});
+      socket.emit("room:join", {username, meetid, newmeet});
     }
   }, [username, meetid])
 
@@ -129,10 +129,11 @@ function Lobby() {
     if (socket) {
       socket.on("user:joined", handleUserJoin);
       socket.on("room:join", handleJoinRoom);
-      socket.on("error:full", handleRoomJoinError);
+      socket.on("error:meet", handleRoomJoinError);
       return () => {
         socket.off("user:joined", handleUserJoin);
         socket.off("room:join", handleJoinRoom);
+        socket.off("error:meet", handleRoomJoinError);
       };
     };
   }, [socket, handleJoinRoom]);

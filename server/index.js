@@ -1,8 +1,27 @@
+import express from 'express';
 import { Server } from 'socket.io';
+import http from 'http';
+
+// Create an Express app
+const app = express();
+
+// Create an HTTP server and attach Socket.IO
+const server = http.createServer(app);
+
+// Add a GET route to show a message
+app.get('/', (req, res) => {
+  res.send('WebRTC Signaling Server is Running');
+});
 
 // Start a new server at port 3000 and enable to be accessble by any site using cors true.
-const io = new Server(3000, {
-	cors: true,
+const io = new Server(server, {
+	cors: {
+		origin: "*",
+		methods: ["GET", "POST"],
+		credentials: true,
+		transports: ['websocket', 'polling'],
+	},
+	allowEIO3: true
 });
 
 // Maps to store data associated with usernames and rooms.
@@ -23,9 +42,12 @@ io.on("connection", (socket) => {
 		if (roomInfo) {
 			const usersInRoom = Array.from(roomInfo);
 			if (usersInRoom.length >= 2) {
-				io.to(socket.id).emit("error:full", { error: "Can't join the room.", message: `Sorry! Room '${meetid}' is already full.` });
+				io.to(socket.id).emit("error:meet", { error: "Can't join the room.", message: `Sorry! Room '${meetid}' is already full.` });
 				return;
 			}
+		} else if (!roomInfo && !data.newmeet) {
+			io.to(socket.id).emit("error:meet", { error: "Can't join the room.", message: `Sorry! Room '${meetid}' closed / does not exist.` });
+			return;
 		}
 
 		// Associate socket ID with username and meet ID.
@@ -90,4 +112,9 @@ io.on("connection", (socket) => {
 
 		io.to(room).emit("user:left", {id: socket.id, username});
 	});
+});
+
+// Start the server on port 3000
+server.listen(3000, () => {
+  console.log('Server is running on port: 3000');
 });

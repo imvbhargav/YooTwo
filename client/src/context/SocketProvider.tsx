@@ -10,7 +10,7 @@ export const useSocket = () => {
 };
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const socket = useMemo(() => io("localhost:3000"), []);
+  const socket = useMemo(() => io("https://yootwo-server-production.up.railway.app/"), []);
 
   // Cleanup on unmount
   useEffect(() => {
