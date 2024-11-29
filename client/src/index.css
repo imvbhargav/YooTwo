@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: inherit;
+  font-family: "Outfit", serif;
+  color: #e5e7eb;
+}
+
+html {
+  font-size: 62.5%;
+}
+
+body {
+  box-sizing: border-box;
+  font-size: 1.6rem;
+  --dot-bg: #1C1C1C;
+  --dot-color: #666666;
+  --dot-size: 1px;
+  --dot-space: 25px;
+	background:
+		linear-gradient(90deg, var(--dot-bg) calc(var(--dot-space) - var(--dot-size)), transparent 1%) center / var(--dot-space) var(--dot-space),
+		linear-gradient(var(--dot-bg) calc(var(--dot-space) - var(--dot-size)), transparent 1%) center / var(--dot-space) var(--dot-space),
+		var(--dot-color);
+    animation: animatedot 150s linear infinite;
+}
+
+*::selection {
+  background-color: blue;
+  color: pink;
+}
+
+#root {
+  overflow-x: hidden;
+}
+
+@keyframes animatedot {
+  from {
+    background-position: 0%;
+  } to {
+    background-position: 100%;
+  }
+}

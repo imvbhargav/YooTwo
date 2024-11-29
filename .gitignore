@@ -1,0 +1,7 @@
+# Ignore server and client directories' .gitignores from being tracked
+server/.gitignore
+client/.gitignore
+
+# You can also ignore other general files/folders here
+*.log
+*.env

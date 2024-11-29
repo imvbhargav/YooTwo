@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.shadw {
+  box-shadow: 0 -10px 0 #d4d4d8;
+}
+
+form > div > input {
+  background-color: #1e1e1e;
+  color: #d4d4d8;
+  border: 2px solid #d4d4d8;
+  font-size: 1.8rem;
+}
+
+form > button {
+  background-color: #1e1e1e;
+  color: #d4d4d8;
+  font-size: 1.8rem;
+  border: 2px solid #d4d4d8;
+  cursor: pointer;
+}
+
+form > button:hover {
+  background-color: #d4d4d8;
+  color: #1e1e1e;
+  border: 2px solid transparent;
+}
+
+form > div > input:disabled {
+  background-color: #000;
+  color: #fff;
+}
+
+form > div > input:hover,
+form > div > input:focus,
+form > div > input:active  {
+  border: 2px solid #d4d4d8;
+  outline: none;
+}
+
+form > div > input:focus,
+form > div > input:active {
+  background-color: #d4d4d8;
+  color: #1e1e1e;
+}
+
+form > div > input:disabled:focus,
+form > div > input:disabled:active {
+  background-color: #000;
+  color: #fff;
+  border: 2px solid #d4d4d8;
+}
+
+form > div > input:focus::placeholder,
+form > input:focus::placeholder {
+  color: transparent;
+}
+
+form > input:hover,
+form > input:focus,
+form > input:active {
+  outline: none;
+  border: none;
+}
+
+.ytp-youtube-button {
+  display: none !important;
+}
+
+.range_slider{
+  overflow: hidden;
+  -webkit-appearance: none;  /* Override default CSS styles */
+  appearance: none;
+  width: 100%; /* Full-width */
+  height: 10px; /* Specified height */
+  background: #202020; /* Grey background */
+  outline: none; /* Remove outline */
+  -webkit-transition: .2s; /* 0.2 seconds transition on hover */
+  transition: opacity .2s;
+  border-radius: 34px;
+}
+
+.range_slider::-webkit-slider-thumb {
+  -webkit-appearance: none; /* Override default look */
+  appearance: none;
+  width: 0.2em; /* Set a specific slider handle width */
+  height: 15px; /* Slider handle height */
+  background: blueviolet; /* Green background */
+  cursor: pointer; /* Cursor on hover */
+  border-radius: 34px;
+  box-shadow: -150px 0 0 150px blueviolet;
+}
+
+.range_slider::-moz-range-thumb {
+  width: 1px; /* Set a specific slider handle width */
+  height: 25px; /* Slider handle height */
+  background: blueviolet; /* Green background */
+  cursor: pointer; /* Cursor on hover */
+  border-radius: 34px;
+  box-shadow: -150px 0 0 150px blueviolet;
+}
+
+
+
+.range_slider_video{
+  overflow: hidden;
+  -webkit-appearance: none;  /* Override default CSS styles */
+  appearance: none;
+  width: 100%; /* Full-width */
+  height: 25px; /* Specified height */
+  background: #202020; /* Grey background */
+  outline: none; /* Remove outline */
+  -webkit-transition: .2s; /* 0.2 seconds transition on hover */
+  transition: opacity .2s;
+}
+
+.range_slider_video::-webkit-slider-thumb {
+  -webkit-appearance: none; /* Override default look */
+  appearance: none;
+  width: 0.2em; /* Set a specific slider handle width */
+  height: 25px; /* Slider handle height */
+  background: rgb(236 72 153); /* Green background */
+  cursor: pointer; /* Cursor on hover */
+  box-shadow: -1500px 0 0 1500px rgb(236 72 153);
+}
+
+.range_slider_video::-moz-range-thumb {
+  width: 1px; /* Set a specific slider handle width */
+  height: 25px; /* Slider handle height */
+  background: rgb(236 72 153); /* Green background */
+  cursor: pointer; /* Cursor on hover */
+  box-shadow: -1500px 0 0 1500px rgb(236 72 153);
+}
