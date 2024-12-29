@@ -10,7 +10,7 @@ export const useSocket = () => {
 };
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const socket = useMemo(() => io("https://yootwo-server-production.up.railway.app/"), []);
+  const socket = useMemo(() => io("https://yappiest-claudia-bhargav-personal-17f8b7fe.koyeb.app/"), []);
 
   // Cleanup on unmount
   useEffect(() => {
