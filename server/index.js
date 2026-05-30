@@ -1,119 +1,105 @@
-import express from 'express';
-import { Server } from 'socket.io';
-import http from 'http';
+import express from "express";
+import { Server } from "socket.io";
+import http from "http";
 
-// Create an Express app
 const app = express();
-
-// Create an HTTP server and attach Socket.IO
 const server = http.createServer(app);
 
-// Add a GET route to show a message
-app.get('/', (req, res) => {
-  res.send('WebRTC Signaling Server is Running');
+app.get("/", (req, res) => {
+  res.send("WebRTC Signaling Server is Running");
 });
 
-// Start a new server at port 3000 and enable to be accessble by any site using cors true.
 const io = new Server(server, {
-	cors: {
-		origin: "*",
-		methods: ["GET", "POST"],
-		credentials: true,
-		transports: ['websocket', 'polling'],
-	},
-	allowEIO3: true
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+    credentials: true,
+    transports: ["websocket", "polling"],
+  },
+  allowEIO3: true,
 });
 
-// Maps to store data associated with usernames and rooms.
 const socketIDToUsernameMap = new Map();
 const socketIDToMeetIDMap = new Map();
 
-// On connection is established.
 io.on("connection", (socket) => {
+  socket.on("room:join", (data) => {
+    const { username, meetid } = data;
+    const roomInfo = io.sockets.adapter.rooms.get(meetid);
 
-	// Handle room join.
-	socket.on("room:join", (data) => {
+    if (roomInfo) {
+      const usersInRoom = Array.from(roomInfo);
+      if (usersInRoom.length >= 2) {
+        io.to(socket.id).emit("error:meet", {
+          error: "Can't join the room.",
+          message: `Sorry! Room '${meetid}' is already full.`,
+        });
+        return;
+      }
+    } else if (!roomInfo && !data.newmeet) {
+      io.to(socket.id).emit("error:meet", {
+        error: "Can't join the room.",
+        message: `Sorry! Room '${meetid}' closed / does not exist.`,
+      });
+      return;
+    }
 
-		// get username and Meet ID from the received data.
-		const { username, meetid } = data;
+    socketIDToMeetIDMap.set(socket.id, meetid);
+    socketIDToUsernameMap.set(socket.id, username);
+    socket.join(meetid);
 
-		// Check if the room is already full (2 members exists).
-		const roomInfo = io.sockets.adapter.rooms.get(meetid);
-		if (roomInfo) {
-			const usersInRoom = Array.from(roomInfo);
-			if (usersInRoom.length >= 2) {
-				io.to(socket.id).emit("error:meet", { error: "Can't join the room.", message: `Sorry! Room '${meetid}' is already full.` });
-				return;
-			}
-		} else if (!roomInfo && !data.newmeet) {
-			io.to(socket.id).emit("error:meet", { error: "Can't join the room.", message: `Sorry! Room '${meetid}' closed / does not exist.` });
-			return;
-		}
+    console.log(
+      `User ${username} with socket ID ${socket.id} joined meet ${meetid}.`,
+    );
 
-		// Associate socket ID with username and meet ID.
-		socketIDToMeetIDMap.set(socket.id, meetid);
-		socketIDToUsernameMap.set(socket.id, username);
+    io.to(meetid).emit("user:joined", { username, id: socket.id, meetid });
+    io.to(socket.id).emit("room:join", data);
+  });
 
-		// Join the room with the meet ID.
-		socket.join(meetid);
+  socket.on("user:accepted", (data) => {
+    console.log("User accepted to the room: ", data.room);
+    const roomInfo = io.sockets.adapter.rooms.get(data.room);
 
-		// Log in server the joining of the user.
-		console.log(`User ${username} with socket ID ${socket.id} joined meet ${meetid}.`);
+    if (roomInfo) {
+      const usersInRoom = Array.from(roomInfo);
+      console.log(`Users in room ${data.room}:`, usersInRoom);
+    } else {
+      console.log(`Room ${data.room} does not exist or is empty.`);
+    }
 
-		// Notify users in the room and the joining user.
-		io.to(meetid).emit("user:joined", { username, id: socket.id, meetid });
+    io.to(data.room).emit("user:here", data);
+  });
 
-		// Notify the user that their joining is successful.
-		io.to(socket.id).emit("room:join", data);
-	});
+  socket.on("receive:offer", (data) => {
+    io.to(data.room).emit("receive:offer", data);
+  });
 
-	// Handle new user joining, as accepting the new user.
- 	socket.on("user:accepted", (data) => {
+  socket.on("receive:answer", (data) => {
+    io.to(data.room).emit("receive:answer", data);
+  });
 
-		// Log in the server that user is being accepted.
-		console.log("User accepted to the room: ", data.room);
+  socket.on("negotiate", (data) => {
+    io.to(data.to).emit("negotiated", { from: socket.id, data });
+  });
 
-		// Get the room information and console log all the users in a room.
-		const roomInfo = io.sockets.adapter.rooms.get(data.room);
-		if (roomInfo) {
-			const usersInRoom = Array.from(roomInfo);
-			console.log(`Users in room ${data.room}:`, usersInRoom);
-		} else {
-			console.log(`Room ${data.room} does not exist or is empty.`);
-		}
+  socket.on("negotiation:complete", (data) => {
+    io.to(data.to).emit("negotiation:complete", data);
+  });
 
-		// Notify the users in the room about the user accepting the request.
-		io.to(data.room).emit("user:here", data);
-	});
+  socket.on("ice:send", (data) => {
+    socket.to(data.to).emit("ice:receive", { candidate: data.candidate });
+  });
 
-	// Handle offer to create a WebRTC Connection.
-	socket.on("receive:offer", (data) => {
-		io.to(data.room).emit("receive:offer", data);
-	});
+  socket.on("disconnect", () => {
+    const room = socketIDToMeetIDMap.get(socket.id);
+    const username = socketIDToUsernameMap.get(socket.id);
 
-	// Handle answer receive to establish successful WebRTC Connection.
-	socket.on("receive:answer", (data) => {
-		io.to(data.room).emit("receive:answer", data);
-	});
-
-	socket.on("negotiate", (data) => {
-		io.to(data.to).emit("negotiated", { from: socket.id, data});
-	});
-
-	socket.on("negotiation:complete", (data) => {
-		io.to(data.to).emit("negotiation:complete", data);
-	});
-
-	// Handle socket disconnection.
-	socket.on("disconnect", () => {
-		const room = socketIDToMeetIDMap.get(socket.id);
-		const username = socketIDToUsernameMap.get(socket.id);
-
-		io.to(room).emit("user:left", {id: socket.id, username});
-	});
+    if (room) {
+      io.to(room).emit("user:left", { id: socket.id, username });
+    }
+  });
 });
 
-// Start the server on port 8000
 server.listen(8000, () => {
-  console.log('Server is running on port: 8000');
+  console.log("Server is running on port: 8000");
 });
