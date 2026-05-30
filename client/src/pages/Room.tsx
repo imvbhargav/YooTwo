@@ -8,7 +8,7 @@ import React, {
 import ReactPlayer from "react-player";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSocket } from "../context/SocketProvider";
-import { useMeeting } from "../context/MeetProvider";
+import { useMeeting } from "../context/MeetingContext";
 import peer from "../service/peer";
 import OverlayControls from "../components/overlayControls";
 import {
@@ -164,6 +164,7 @@ function Room(): JSX.Element {
   );
   const receiveTypeRef = useRef<string>("callStream");
   const fileStreamRef = useRef<MediaStream | null>(null);
+  const isRemoteActionRef = useRef<boolean>(false); // Fix 3: Ping-Pong Loop Guard
 
   const socket = useSocket();
   const navigate = useNavigate();
@@ -198,6 +199,37 @@ function Room(): JSX.Element {
   const [playedSecs, setPlayedSecs] = useState<string>("00:00");
   const [volume, setVolume] = useState<number>(100);
 
+  // ── Fix 2: Fetch stream once to prevent WebRTC renegotiation on toggle ──
+  useEffect(() => {
+    let isMounted = true;
+    const initStream = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        if (isMounted) {
+          // Disable tracks initially based on state
+          stream.getVideoTracks().forEach((t) => (t.enabled = showMe));
+          stream.getAudioTracks().forEach((t) => (t.enabled = listenMe));
+          setLocalStream(stream);
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        }
+      } catch (err) {
+        setError("Unable to access media devices. Please check permissions.");
+        console.error(err);
+      }
+    };
+    initStream();
+    return () => {
+      isMounted = false;
+      localStream?.getTracks().forEach((t) => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Streams ──────────────────────────────────────
   const sendStreams = useCallback(() => {
     if (!showMe && !listenMe && peer.dataChannel?.readyState === "open") {
@@ -210,10 +242,16 @@ function Room(): JSX.Element {
         JSON.stringify({ type: "mediaReceiving", content: "callStream" }),
       );
       setTimeout(() => {
+        // Clear old tracks and add current
+        const senders = peer.peer?.getSenders() || [];
         for (const track of localStream.getTracks()) {
+          const senderExists = senders.find(
+            (s) => s.track?.kind === track.kind,
+          );
           if (
-            (showMe && track.kind === "video") ||
-            (listenMe && track.kind === "audio")
+            !senderExists &&
+            ((showMe && track.kind === "video") ||
+              (listenMe && track.kind === "audio"))
           ) {
             peer.peer?.addTrack(track, localStream);
           }
@@ -222,42 +260,46 @@ function Room(): JSX.Element {
     }
   }, [showMe, listenMe, localStream]);
 
+  // Update track enabled state without destroying the stream
+  useEffect(() => {
+    if (localStream) {
+      localStream.getVideoTracks().forEach((t) => (t.enabled = showMe));
+      localStream.getAudioTracks().forEach((t) => (t.enabled = listenMe));
+      sendStreams(); // Ensure updated stream tracks are pushed if necessary
+    }
+  }, [showMe, listenMe, localStream, sendStreams]);
+
+  // ── Fix 1: Handle ICE Candidates ──────────────────
+  useEffect(() => {
+    const handleIceCandidate = (event: RTCPeerConnectionIceEvent) => {
+      if (event.candidate && remoteSocketID && socket) {
+        socket.emit("ice:send", {
+          to: remoteSocketID,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    peer.peer?.addEventListener("icecandidate", handleIceCandidate);
+    return () => {
+      peer.peer?.removeEventListener("icecandidate", handleIceCandidate);
+    };
+  }, [socket, remoteSocketID]);
+
+  const handleRemoteIceCandidate = useCallback(
+    (data: { candidate: RTCIceCandidateInit }) => {
+      if (peer.peer) {
+        peer.peer
+          .addIceCandidate(new RTCIceCandidate(data.candidate))
+          .catch(console.error);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (error) console.error(error);
   }, [error]);
-
-  useEffect(() => {
-    const getUserMedia = async () => {
-      try {
-        localStream?.getTracks().forEach((t) => t.stop());
-        let stream: MediaStream = new MediaStream();
-        if (showMe || listenMe) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: showMe,
-            audio: listenMe,
-          });
-        }
-        if (!showMe && !listenMe) {
-          stream.getTracks().forEach((t) => t.stop());
-          setLocalStream(null);
-        } else {
-          if (!showMe && listenMe)
-            stream.getVideoTracks().forEach((t) => t.stop());
-          else if (showMe && !listenMe)
-            stream.getAudioTracks().forEach((t) => t.stop());
-          setLocalStream(stream);
-        }
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      } catch (err) {
-        setError("Unable to access media devices. Please check permissions.");
-        console.error(err);
-      }
-    };
-    getUserMedia();
-    return () => {
-      localStream?.getTracks().forEach((t) => t.stop());
-    };
-  }, [showMe, listenMe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── YouTube ──────────────────────────────────────
   useEffect(() => {
@@ -377,6 +419,8 @@ function Room(): JSX.Element {
     socket.on("negotiated", handleReceivedNegotiation);
     socket.on("negotiation:complete", handleNegotiationComplete);
     socket.on("user:left", handleRemoteUserLeft);
+    socket.on("ice:receive", handleRemoteIceCandidate);
+
     return () => {
       socket.off("user:joined", handleUserJoined);
       socket.off("user:here", handleUserAccepted);
@@ -385,6 +429,7 @@ function Room(): JSX.Element {
       socket.off("negotiated", handleReceivedNegotiation);
       socket.off("negotiation:complete", handleNegotiationComplete);
       socket.off("user:left", handleRemoteUserLeft);
+      socket.off("ice:receive", handleRemoteIceCandidate);
     };
   }, [
     socket,
@@ -395,6 +440,7 @@ function Room(): JSX.Element {
     handleReceivedNegotiation,
     handleNegotiationComplete,
     handleRemoteUserLeft,
+    handleRemoteIceCandidate,
   ]);
 
   useEffect(() => {
@@ -459,8 +505,10 @@ function Room(): JSX.Element {
           setVideo(message.content as string);
         }
       } else if (message.type === "videoCtrl" && message.content === "pause") {
+        isRemoteActionRef.current = true;
         setPlayVideo(false);
       } else if (message.type === "videoCtrl" && message.content === "play") {
+        isRemoteActionRef.current = true;
         setPlayVideo(true);
       } else if (message.type === "ready") {
         setPlayVideo(true);
@@ -549,9 +597,26 @@ function Room(): JSX.Element {
     }
   }, [playVideo, fileExists]);
 
+  // ── Fix 3: Ping-Pong Loop Handler ─────────────────
   const handlePlayPause = (enable: boolean) => {
-    if (!remoteBuffering) setPlayVideo(enable);
+    if (!remoteBuffering) {
+      setPlayVideo(enable);
+
+      if (
+        !isRemoteActionRef.current &&
+        peer.dataChannel?.readyState === "open"
+      ) {
+        peer.dataChannel.send(
+          JSON.stringify({
+            type: "videoCtrl",
+            content: enable ? "play" : "pause",
+          }),
+        );
+      }
+      isRemoteActionRef.current = false;
+    }
   };
+
   const handleForcePlay = (enable: boolean) => {
     handlePlayPause(enable);
     setRemoteBuffering(false);
@@ -695,6 +760,7 @@ function Room(): JSX.Element {
     }
   };
 
+  // ── Fix 4: Safely Check Capture Stream ────────────
   const handlePlayFileStream = () => {
     peer.dataChannel?.send(
       JSON.stringify({ type: "mediaReceiving", content: "videoFile" }),
@@ -702,12 +768,23 @@ function Room(): JSX.Element {
     setTimeout(() => {
       const vRef = fileVideoRef.current as HTMLVideoElement & {
         captureStream?: () => MediaStream;
+        mozCaptureStream?: () => MediaStream;
       };
-      if (vRef?.captureStream) {
-        fileStreamRef.current = vRef.captureStream();
-        fileStreamRef.current?.getTracks().forEach((track) => {
-          peer.peer?.addTrack(track, fileStreamRef.current as MediaStream);
-        });
+
+      const getStream = vRef?.captureStream || vRef?.mozCaptureStream;
+
+      if (getStream) {
+        try {
+          fileStreamRef.current = getStream.call(vRef);
+          fileStreamRef.current?.getTracks().forEach((track) => {
+            peer.peer?.addTrack(track, fileStreamRef.current as MediaStream);
+          });
+        } catch (err) {
+          console.error(
+            "Failed to capture stream from video element. Your browser might not support this natively.",
+            err,
+          );
+        }
       }
     }, 100);
   };
@@ -778,373 +855,355 @@ function Room(): JSX.Element {
   }, [fileExists]);
 
   /* ── Auth gate ─────────────────────────────────── */
-  if ((!username || !meetid)) {
+  if (!username || !meetid) {
     return (
-      <>
-        <div
-          className="min-h-screen bg-[#0a0a0a] text-[#f0ede8] relative overflow-hidden flex items-center justify-center p-6"
-          style={{ fontFamily: "'Syne', sans-serif" }}
-        >
-          <div
-            className="absolute inset-0 z-0 pointer-events-none"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(240,237,232,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(240,237,232,0.025) 1px,transparent 1px)",
-              backgroundSize: "80px 80px",
-            }}
-          />
-
-          <div className="relative z-10 w-full max-w-2xl border border-white/[0.08] p-10 flex flex-col gap-8 bg-[#0a0a0a]/80 backdrop-blur-md shadow-[0_0_60px_-15px_rgba(240,237,232,0.05)]">
-            <div className="border-b border-white/[0.08] pb-8">
-              <p className="font-['DM_Mono',monospace] text-[10px] tracking-[0.2em] uppercase text-white/40 mb-4 flex items-center gap-2">
-                <span className="block w-4 h-px bg-white/30" />
-                Access Denied
-              </p>
-              <h2
-                style={{ fontFamily: "'DM Serif Display', serif" }}
-                className="text-[42px] leading-[1.05] tracking-[-1.5px] text-[#f0ede8]"
-              >
-                Authentication
-                <br />
-                <em className="italic text-white/40">Required.</em>
-              </h2>
-            </div>
-
-            <p className="text-[15px] leading-relaxed text-white/50">
-              You haven't joined a valid session. Return to the lobby to
-              establish a secure peer connection.
-            </p>
-
-            <div className="flex flex-col gap-4 mt-2">
-              <button
-                onClick={() => navigate(`/lobby/join?roomid=${room || ""}`)}
-                className="w-full py-4 bg-[#f0ede8] text-[#0a0a0a] text-[13px] font-bold tracking-[0.08em] uppercase transition-colors hover:bg-white border border-transparent"
-                style={{ fontFamily: "'Syne', sans-serif" }}
-              >
-                Go to Lobby
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  /* ── Main Room UI ──────────────────────────────── */
-  return (
-    <>
       <div
-        className="w-screen h-[100dvh] bg-[#070707] text-[#f0ede8] overflow-hidden flex flex-col relative"
+        className="min-h-screen bg-[#0a0a0a] text-[#f0ede8] relative overflow-hidden flex items-center justify-center p-6"
         style={{ fontFamily: "'Syne', sans-serif" }}
       >
         <div
           className="absolute inset-0 z-0 pointer-events-none"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(240,237,232,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(240,237,232,0.018) 1px,transparent 1px)",
+              "linear-gradient(rgba(240,237,232,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(240,237,232,0.025) 1px,transparent 1px)",
             backgroundSize: "80px 80px",
           }}
         />
 
-        {/* Mobile Header (Hidden on Desktop) */}
-        <div className="lg:hidden relative z-20 px-5 py-4 flex justify-between items-center border-b border-white/[0.07] bg-[#070707]/95 backdrop-blur-md shrink-0">
-          <Link
-            to="/"
-            className="text-2xl font-['DM_Serif_Display',serif] font-black tracking-[-0.5px] text-[#f0ede8] hover:text-white/70 transition-colors"
-          >
-            YooTwo
-          </Link>
-          <div className="flex items-center gap-2">
-            <span className="font-['DM_Mono',monospace] text-[9px] tracking-[0.1em] text-white/40 uppercase">
-              Room:
+        <div className="relative z-10 w-full max-w-2xl border border-white/[0.08] p-10 flex flex-col gap-8 bg-[#0a0a0a]/80 backdrop-blur-md shadow-[0_0_60px_-15px_rgba(240,237,232,0.05)]">
+          <div className="border-b border-white/[0.08] pb-8">
+            <p className="font-['DM_Mono',monospace] text-[10px] tracking-[0.2em] uppercase text-white/40 mb-4 flex items-center gap-2">
+              <span className="block w-4 h-px bg-white/30" />
+              Access Denied
+            </p>
+            <h2
+              style={{ fontFamily: "'DM Serif Display', serif" }}
+              className="text-[42px] leading-[1.05] tracking-[-1.5px] text-[#f0ede8]"
+            >
+              Authentication
+              <br />
+              <em className="italic text-white/40">Required.</em>
+            </h2>
+          </div>
+
+          <p className="text-[15px] leading-relaxed text-white/50">
+            You haven't joined a valid session. Return to the lobby to establish
+            a secure peer connection.
+          </p>
+
+          <div className="flex flex-col gap-4 mt-2">
+            <button
+              onClick={() => navigate(`/lobby/join?roomid=${room || ""}`)}
+              className="w-full py-4 bg-[#f0ede8] text-[#0a0a0a] text-[13px] font-bold tracking-[0.08em] uppercase transition-colors hover:bg-white border border-transparent"
+              style={{ fontFamily: "'Syne', sans-serif" }}
+            >
+              Go to Lobby
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Main Room UI ──────────────────────────────── */
+  return (
+    <div
+      className="w-screen h-[100dvh] bg-[#070707] text-[#f0ede8] overflow-hidden flex flex-col relative"
+      style={{ fontFamily: "'Syne', sans-serif" }}
+    >
+      <div
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(240,237,232,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(240,237,232,0.018) 1px,transparent 1px)",
+          backgroundSize: "80px 80px",
+        }}
+      />
+
+      {/* Mobile Header */}
+      <div className="lg:hidden relative z-20 px-5 py-4 flex justify-between items-center border-b border-white/[0.07] bg-[#070707]/95 backdrop-blur-md shrink-0">
+        <Link
+          to="/"
+          className="text-2xl font-['DM_Serif_Display',serif] font-black tracking-[-0.5px] text-[#f0ede8] hover:text-white/70 transition-colors"
+        >
+          YooTwo
+        </Link>
+        <div className="flex items-center gap-2">
+          <span className="font-['DM_Mono',monospace] text-[9px] tracking-[0.1em] text-white/40 uppercase">
+            Room:
+          </span>
+          <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.1em] text-[#f0ede8] border border-white/10 px-2 py-0.5">
+            {meetid ?? "—"}
+          </span>
+        </div>
+      </div>
+
+      <div className="relative z-10 grid flex-1 min-h-0 overflow-hidden grid-cols-1 grid-rows-[0.6fr_1fr] lg:grid-rows-1 lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_380px]">
+        <main className="relative bg-[#050505] flex items-center justify-center min-h-0 min-w-0 border-b lg:border-b-0 lg:border-r border-white/[0.07]">
+          <div className="absolute inset-0 flex items-center justify-center w-full h-full p-0 lg:p-6 bg-black lg:bg-transparent">
+            <div className="relative w-full h-full lg:max-h-full lg:aspect-video flex items-center justify-center bg-black lg:border border-white/[0.05] overflow-hidden shadow-2xl">
+              {video && (
+                <ReactPlayer
+                  ref={watchRef}
+                  url={video}
+                  className="absolute inset-0"
+                  width="100%"
+                  height="100%"
+                  controls={false}
+                  muted={muted}
+                  volume={volume / 100}
+                  playing={playVideo && !remoteBuffering}
+                  loop={loop}
+                  config={{
+                    youtube: {
+                      playerVars: {
+                        modestbranding: 1,
+                        fs: 0,
+                        iv_load_policy: 3,
+                        rel: 0,
+                        controls: 0,
+                        showinfo: 0,
+                      },
+                    },
+                  }}
+                  onReady={handleReady}
+                  onPause={() => handlePlayPause(false)}
+                  onPlay={() => handlePlayPause(true)}
+                  onBuffer={() => handleBuffer(true)}
+                  onBufferEnd={() => handleBuffer(false)}
+                  onProgress={handleProgress}
+                  onDuration={handleDuration}
+                  onEnded={() => handlePlayPause(false)}
+                />
+              )}
+
+              {fileExists && (
+                <video
+                  ref={fileVideoRef}
+                  autoPlay={playVideo}
+                  playsInline
+                  controls={false}
+                  disablePictureInPicture
+                  muted={muted}
+                  loop={loop}
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              )}
+
+              {(video || fileExists) && (
+                <OverlayControls
+                  playVideo={playVideo}
+                  muted={muted}
+                  setMuted={setMuted}
+                  loop={loop}
+                  volume={volume}
+                  videoProgress={videoProgress}
+                  videoLoaded={videoLoaded}
+                  playedSecs={playedSecs}
+                  totalDuration={totalDuration}
+                  fileExists={fileExists}
+                  videoID={videoID}
+                  remoteBuffering={remoteBuffering}
+                  handleForcePlay={handleForcePlay}
+                  handleVolumeChange={handleVolumeChange}
+                  handleSeekVideo={handleSeekVideo}
+                  handleLoopChange={handleLoopChange}
+                  remoteUsername={remoteUsername}
+                />
+              )}
+
+              {!video && !fileExists && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 select-none bg-[#050505]">
+                  <div className="w-16 h-16 md:w-20 md:h-20 border border-white/[0.06] flex items-center justify-center shadow-lg">
+                    <svg
+                      className="w-8 h-8 text-white/15"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <p className="font-['DM_Mono',monospace] text-[10px] md:text-[11px] tracking-[0.2em] uppercase text-white/30 text-center px-4">
+                    No media selected
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+
+        <aside className="w-full bg-[#070707] flex flex-col z-20 overflow-y-auto lg:overflow-hidden min-h-0 relative">
+          <div className="hidden lg:flex px-6 xl:px-8 py-8 border-b border-white/[0.06] items-center justify-between shrink-0">
+            <Link
+              to="/"
+              className="font-['DM_Serif_Display',serif] font-black text-4xl tracking-[-1px] text-[#f0ede8] hover:text-white/70 transition-colors"
+            >
+              YooTwo
+            </Link>
+            <div className="flex items-center gap-3">
+              <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-white/40">
+                P2P
+              </span>
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${remoteUsername ? "bg-emerald-400" : "bg-white/20"}`}
+              />
+            </div>
+          </div>
+
+          <div className="hidden lg:flex items-center justify-between px-6 xl:px-8 py-5 border-b border-white/[0.06] shrink-0">
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.16em] uppercase text-white/40">
+              Participants
             </span>
-            <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.1em] text-[#f0ede8] border border-white/10 px-2 py-0.5">
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.1em] text-white/40 border border-white/[0.1] px-3 py-1.5">
+              {remoteUsername ? "2" : "1"} / 2
+            </span>
+          </div>
+
+          <div className="flex flex-col flex-1 min-h-0 p-4 lg:p-6 xl:p-8 gap-4 overflow-y-auto items-stretch content-stretch">
+            <VideoTile name={username ?? "You"} isLocal hasVideo={showMe}>
+              <video
+                className="w-full h-full object-cover"
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                controls={false}
+              />
+            </VideoTile>
+
+            <VideoTile
+              name={remoteUsername}
+              hasVideo={!!remoteStream && remoteVideoExist}
+              onCopy={handleCopy}
+              copyRef={copyRef}
+            >
+              <video
+                className={`h-full object-cover ${remoteVideoExist ? "w-full" : "hidden"}`}
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                controls={false}
+              />
+            </VideoTile>
+          </div>
+
+          <div className="grid grid-cols-3 lg:grid-cols-2 gap-3 lg:gap-4 w-full p-4 lg:p-6 xl:p-8 border-t border-white/[0.06] shrink-0 bg-[#0a0a0a] lg:bg-transparent">
+            <button
+              onClick={toggleMyAudio}
+              title={listenMe ? "Mute" : "Unmute"}
+              className={`col-span-1 h-14 md:h-16 lg:h-24 border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 shadow-lg ${listenMe ? "bg-[#f0ede8]/15 border-[#f0ede8]/25 text-white hover:bg-white/25" : "bg-[#0a0a0a] border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80"}`}
+            >
+              <IconMic off={!listenMe} />
+              <span className="hidden lg:block font-['DM_Mono',monospace] text-[10px] tracking-[0.12em] uppercase">
+                Audio
+              </span>
+            </button>
+
+            <button
+              onClick={toggleMyVideo}
+              title={showMe ? "Stop Video" : "Start Video"}
+              className={`col-span-1 h-14 md:h-16 lg:h-24 border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 shadow-lg ${showMe ? "bg-[#f0ede8]/15 border-[#f0ede8]/25 text-white hover:bg-white/25" : "bg-[#0a0a0a] border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80"}`}
+            >
+              <IconVideo off={!showMe} />
+              <span className="hidden lg:block font-['DM_Mono',monospace] text-[10px] tracking-[0.12em] uppercase">
+                Video
+              </span>
+            </button>
+
+            <button
+              onClick={endCall}
+              title="End Call"
+              className="col-span-1 lg:col-span-2 h-14 md:h-16 lg:h-16 bg-red-500 hover:bg-red-600 border border-transparent text-white flex items-center justify-center gap-3 transition-colors shadow-[0_0_25px_-5px_rgba(239,68,68,0.35)]"
+            >
+              <IconPhone />
+              <span className="hidden lg:block font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-white/90">
+                End Call
+              </span>
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <footer className="relative z-20 shrink-0 border-t border-white/[0.07] bg-[#070707]/95 backdrop-blur-md flex flex-col md:flex-row items-stretch gap-0">
+        <div className="hidden lg:flex items-center justify-between w-64 shrink-0 border-r border-white/10 px-6 xl:px-8 py-5">
+          <div className="flex flex-col gap-1.5">
+            <span className="font-['DM_Serif_Display',serif] text-lg text-white/80 leading-none">
+              {username ?? "Guest"}
+            </span>
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.1em] uppercase text-white/40 truncate w-44">
+              {remoteUsername
+                ? `with ${remoteUsername}`
+                : "Waiting for peer..."}
+            </span>
+          </div>
+        </div>
+
+        <form
+          onSubmit={handleURLSubmit}
+          className="w-full flex items-stretch gap-2 lg:gap-3 px-4 md:px-6 py-3 md:py-4"
+        >
+          <input
+            type="url"
+            onChange={(e) => setVdurl(e.target.value)}
+            placeholder="Paste YouTube URL..."
+            value={vdurl ?? ""}
+            className="py-3 flex-1 min-w-0 bg-[#0a0a0a] lg:bg-transparent border border-white/[0.1] px-4 md:px-6 text-[#f0ede8] font-['DM_Mono',monospace] text-[11px] md:text-[13px] outline-none transition-colors placeholder-white/20 focus:border-white/40 hover:border-white/25 shadow-inner"
+          />
+          <button
+            type="submit"
+            className="shrink-0 font-['Syne',sans-serif] text-[11px] md:text-[13px] font-bold tracking-[0.08em] uppercase text-[#0a0a0a] bg-[#f0ede8] px-5 md:px-8 transition-colors hover:bg-white whitespace-nowrap border border-transparent shadow-lg flex items-center justify-center"
+          >
+            Play
+          </button>
+          <span className="hidden md:block w-px bg-white/10 mx-2 shrink-0 my-2" />
+          <input
+            type="file"
+            accept="video/*"
+            onChange={handleFileChange}
+            className="hidden"
+            ref={fileRef}
+          />
+          <button
+            type="button"
+            onClick={handleFileClick}
+            title="Share Local File"
+            className="shrink-0 hidden sm:flex items-center justify-center font-['Syne',sans-serif] text-[11px] md:text-[13px] font-bold tracking-[0.08em] uppercase text-white/60 border border-white/20 px-4 md:px-6 lg:px-8 transition-colors hover:border-white/40 hover:text-white hover:bg-white/[0.04] whitespace-nowrap bg-[#0a0a0a] lg:bg-transparent"
+          >
+            <span className="hidden lg:inline">Local File</span>
+            <span className="lg:hidden">
+              <IconFolder />
+            </span>
+          </button>
+        </form>
+
+        <div className="hidden lg:flex items-center justify-end gap-5 w-64 shrink-0 border-l border-white/10 px-6 xl:px-8 py-5">
+          <div className="flex flex-col gap-1.5 items-end">
+            <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.1em] text-white/30 uppercase">
+              Room ID
+            </span>
+            <span className="font-['DM_Mono',monospace] text-[13px] tracking-[0.1em] uppercase text-white/70">
               {meetid ?? "—"}
             </span>
           </div>
+          {remoteBuffering && (
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-amber-400/80 animate-pulse border border-amber-400/30 px-3 py-1.5 ml-3 bg-amber-400/5">
+              Buffering
+            </span>
+          )}
         </div>
-
-        {/* ── Main Grid Container (Fixed Desktop Layout, Stacked Mobile Layout) ───────────────── */}
-        <div className="relative z-10 grid flex-1 min-h-0 overflow-hidden grid-cols-1 grid-rows-[0.6fr_1fr] lg:grid-rows-1 lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_380px]">
-          {/* ── Main video stage ───────────────────── */}
-          <main className="relative bg-[#050505] flex items-center justify-center min-h-0 min-w-0 border-b lg:border-b-0 lg:border-r border-white/[0.07]">
-            <div className="absolute inset-0 flex items-center justify-center w-full h-full p-0 lg:p-6 bg-black lg:bg-transparent">
-              <div className="relative w-full h-full lg:max-h-full lg:aspect-video flex items-center justify-center bg-black lg:border border-white/[0.05] overflow-hidden shadow-2xl">
-                {video && (
-                  <ReactPlayer
-                    ref={watchRef}
-                    url={video}
-                    className="absolute inset-0"
-                    width="100%"
-                    height="100%"
-                    controls={false}
-                    muted={muted}
-                    volume={volume / 100}
-                    playing={playVideo && !remoteBuffering}
-                    loop={loop}
-                    config={{
-                      youtube: {
-                        playerVars: {
-                          modestbranding: 1,
-                          fs: 0,
-                          iv_load_policy: 3,
-                          rel: 0,
-                          controls: 0,
-                          showinfo: 0,
-                        },
-                      },
-                    }}
-                    onReady={handleReady}
-                    onPause={() => handlePlayPause(false)}
-                    onPlay={() => handlePlayPause(true)}
-                    onBuffer={() => handleBuffer(true)}
-                    onBufferEnd={() => handleBuffer(false)}
-                    onProgress={handleProgress}
-                    onDuration={handleDuration}
-                    onEnded={() => handlePlayPause(false)}
-                  />
-                )}
-
-                {fileExists && (
-                  <video
-                    ref={fileVideoRef}
-                    autoPlay={playVideo}
-                    playsInline
-                    controls={false}
-                    disablePictureInPicture
-                    muted={muted}
-                    loop={loop}
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
-                )}
-
-                {(video || fileExists) && (
-                  <OverlayControls
-                    playVideo={playVideo}
-                    muted={muted}
-                    setMuted={setMuted}
-                    loop={loop}
-                    volume={volume}
-                    videoProgress={videoProgress}
-                    videoLoaded={videoLoaded}
-                    playedSecs={playedSecs}
-                    totalDuration={totalDuration}
-                    fileExists={fileExists}
-                    videoID={videoID}
-                    remoteBuffering={remoteBuffering}
-                    handleForcePlay={handleForcePlay}
-                    handleVolumeChange={handleVolumeChange}
-                    handleSeekVideo={handleSeekVideo}
-                    handleLoopChange={handleLoopChange}
-                    remoteUsername={remoteUsername}
-                  />
-                )}
-
-                {!video && !fileExists && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 select-none bg-[#050505]">
-                    <div className="w-16 h-16 md:w-20 md:h-20 border border-white/[0.06] flex items-center justify-center shadow-lg">
-                      <svg
-                        className="w-8 h-8 text-white/15"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={1}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <p className="font-['DM_Mono',monospace] text-[10px] md:text-[11px] tracking-[0.2em] uppercase text-white/30 text-center px-4">
-                      No media selected
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </main>
-
-          {/* ── Right sidebar / Bottom on Mobile ────── */}
-          <aside className="w-full bg-[#070707] flex flex-col z-20 overflow-y-auto lg:overflow-hidden min-h-0 relative">
-            {/* Desktop Header / Branding */}
-            <div className="hidden lg:flex px-6 xl:px-8 py-8 border-b border-white/[0.06] items-center justify-between shrink-0">
-              <Link
-                to="/"
-                className="font-['DM_Serif_Display',serif] font-black text-4xl tracking-[-1px] text-[#f0ede8] hover:text-white/70 transition-colors"
-              >
-                YooTwo
-              </Link>
-              <div className="flex items-center gap-3">
-                <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-white/40">
-                  P2P
-                </span>
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${remoteUsername ? "bg-emerald-400" : "bg-white/20"}`}
-                />
-              </div>
-            </div>
-
-            {/* Desktop Status Bar */}
-            <div className="hidden lg:flex items-center justify-between px-6 xl:px-8 py-5 border-b border-white/[0.06] shrink-0">
-              <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.16em] uppercase text-white/40">
-                Participants
-              </span>
-              <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.1em] text-white/40 border border-white/[0.1] px-3 py-1.5">
-                {remoteUsername ? "2" : "1"} / 2
-              </span>
-            </div>
-
-            {/* Participants (Stacked Col on both Mobile and Desktop) */}
-            <div className="flex flex-col flex-1 min-h-0 p-4 lg:p-6 xl:p-8 gap-4 overflow-y-auto items-stretch content-stretch">
-              <VideoTile name={username ?? "You"} isLocal hasVideo={showMe}>
-                <video
-                  className="w-full h-full object-cover"
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  controls={false}
-                />
-              </VideoTile>
-
-              <VideoTile
-                name={remoteUsername}
-                hasVideo={!!remoteStream && remoteVideoExist}
-                onCopy={handleCopy}
-                copyRef={copyRef}
-              >
-                <video
-                  className={`h-full object-cover ${remoteVideoExist ? "w-full" : "hidden"}`}
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  controls={false}
-                />
-              </VideoTile>
-            </div>
-
-            {/* Action Controls Block */}
-            <div className="grid grid-cols-3 lg:grid-cols-2 gap-3 lg:gap-4 w-full p-4 lg:p-6 xl:p-8 border-t border-white/[0.06] shrink-0 bg-[#0a0a0a] lg:bg-transparent">
-              <button
-                onClick={toggleMyAudio}
-                title={listenMe ? "Mute" : "Unmute"}
-                className={`col-span-1 h-14 md:h-16 lg:h-24 border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 shadow-lg ${listenMe ? "bg-[#f0ede8]/15 border-[#f0ede8]/25 text-white hover:bg-white/25" : "bg-[#0a0a0a] border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80"}`}
-              >
-                <IconMic off={!listenMe} />
-                <span
-                  className={`hidden lg:block font-['DM_Mono',monospace] text-[10px] tracking-[0.12em] uppercase`}
-                >
-                  Audio
-                </span>
-              </button>
-
-              <button
-                onClick={toggleMyVideo}
-                title={showMe ? "Stop Video" : "Start Video"}
-                className={`col-span-1 h-14 md:h-16 lg:h-24 border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 shadow-lg ${showMe ? "bg-[#f0ede8]/15 border-[#f0ede8]/25 text-white hover:bg-white/25" : "bg-[#0a0a0a] border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80"}`}
-              >
-                <IconVideo off={!showMe} />
-                <span
-                  className={`hidden lg:block font-['DM_Mono',monospace] text-[10px] tracking-[0.12em] uppercase`}
-                >
-                  Video
-                </span>
-              </button>
-
-              <button
-                onClick={endCall}
-                title="End Call"
-                className="col-span-1 lg:col-span-2 h-14 md:h-16 lg:h-16 bg-red-500 hover:bg-red-600 border border-transparent text-white flex items-center justify-center gap-3 transition-colors shadow-[0_0_25px_-5px_rgba(239,68,68,0.35)]"
-              >
-                <IconPhone />
-                <span className="hidden lg:block font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-white/90">
-                  End Call
-                </span>
-              </button>
-            </div>
-          </aside>
-        </div>
-
-        {/* ── Bottom control bar: Media Inputs ────── */}
-        <footer className="relative z-20 shrink-0 border-t border-white/[0.07] bg-[#070707]/95 backdrop-blur-md flex flex-col md:flex-row items-stretch gap-0">
-          {/* Guest / Peer Info (Desktop Only) */}
-          <div className="hidden lg:flex items-center justify-between w-64 shrink-0 border-r border-white/10 px-6 xl:px-8 py-5">
-            <div className="flex flex-col gap-1.5">
-              <span className="font-['DM_Serif_Display',serif] text-lg text-white/80 leading-none">
-                {username ?? "Guest"}
-              </span>
-              <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.1em] uppercase text-white/40 truncate w-44">
-                {remoteUsername
-                  ? `with ${remoteUsername}`
-                  : "Waiting for peer..."}
-              </span>
-            </div>
-          </div>
-
-          <form
-            onSubmit={handleURLSubmit}
-            className="w-full flex items-stretch gap-2 lg:gap-3 px-4 md:px-6 py-3 md:py-4"
-          >
-            <input
-              type="url"
-              onChange={(e) => setVdurl(e.target.value)}
-              placeholder="Paste YouTube URL..."
-              value={vdurl ?? ""}
-              className="py-3 flex-1 min-w-0 bg-[#0a0a0a] lg:bg-transparent border border-white/[0.1] px-4 md:px-6 text-[#f0ede8] font-['DM_Mono',monospace] text-[11px] md:text-[13px] outline-none transition-colors placeholder-white/20 focus:border-white/40 hover:border-white/25 shadow-inner"
-            />
-            <button
-              type="submit"
-              className="shrink-0 font-['Syne',sans-serif] text-[11px] md:text-[13px] font-bold tracking-[0.08em] uppercase text-[#0a0a0a] bg-[#f0ede8] px-5 md:px-8 transition-colors hover:bg-white whitespace-nowrap border border-transparent shadow-lg flex items-center justify-center"
-            >
-              Play
-            </button>
-            <span className="hidden md:block w-px bg-white/10 mx-2 shrink-0 my-2" />
-            <input
-              type="file"
-              accept="video/*"
-              onChange={handleFileChange}
-              className="hidden"
-              ref={fileRef}
-            />
-            <button
-              type="button"
-              onClick={handleFileClick}
-              title="Share Local File"
-              className="shrink-0 hidden sm:flex items-center justify-center font-['Syne',sans-serif] text-[11px] md:text-[13px] font-bold tracking-[0.08em] uppercase text-white/60 border border-white/20 px-4 md:px-6 lg:px-8 transition-colors hover:border-white/40 hover:text-white hover:bg-white/[0.04] whitespace-nowrap bg-[#0a0a0a] lg:bg-transparent"
-            >
-              <span className="hidden lg:inline">Local File</span>
-              <span className="lg:hidden">
-                <IconFolder />
-              </span>
-            </button>
-          </form>
-
-          {/* Room ID (Desktop Only) */}
-          <div className="hidden lg:flex items-center justify-end gap-5 w-64 shrink-0 border-l border-white/10 px-6 xl:px-8 py-5">
-            <div className="flex flex-col gap-1.5 items-end">
-              <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.1em] text-white/30 uppercase">
-                Room ID
-              </span>
-              <span className="font-['DM_Mono',monospace] text-[13px] tracking-[0.1em] uppercase text-white/70">
-                {meetid ?? "—"}
-              </span>
-            </div>
-            {remoteBuffering && (
-              <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.12em] uppercase text-amber-400/80 animate-pulse border border-amber-400/30 px-3 py-1.5 ml-3 bg-amber-400/5">
-                Buffering
-              </span>
-            )}
-          </div>
-        </footer>
-      </div>
-    </>
+      </footer>
+    </div>
   );
 }
 
