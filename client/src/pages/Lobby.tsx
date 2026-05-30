@@ -1,130 +1,130 @@
-import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import React, {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useParams, useLocation, useNavigate, Link } from "react-router-dom";
 import { useSocket } from "../context/SocketProvider";
-import { useMeeting } from '../context/MeetProvider';
-import { v4 as uuidv4 } from 'uuid';
+import { useMeeting } from "../context/MeetProvider";
+import { v4 as uuidv4 } from "uuid";
+import { RoomData, JoinRoomError } from "../types";
 
-let interval: any = undefined;
-
-// Types for the RoomData object.
-interface RoomData {
-  meetid: string,
-  id: string,
-  username: string,
-}
-
-// Set username, meet ID and socket ID values in session storage.
-function setSessionValues(name: string, meetid: string) {
+const setSessionValues = (name: string, meetid: string): void => {
   if (meetid) {
     sessionStorage.setItem("username", name);
     sessionStorage.setItem("meetid", meetid);
   }
 };
 
-// Set username, meet ID and socket ID values in session storage.
-function getSessionValues(): {userName: string | null, meetID: string | null, message: string | null} {
-  const userName = sessionStorage.getItem("username");
-  const meetID = sessionStorage.getItem("meetid");
-  const message = sessionStorage.getItem("message")??null;
-  return {userName, meetID, message};
-};
+const getSessionValues = () => ({
+  userName: sessionStorage.getItem("username"),
+  meetID: sessionStorage.getItem("meetid"),
+  message: sessionStorage.getItem("message"),
+});
 
-function Lobby() {
-
-  // States for username, meet ID and socket ID.
+function Lobby(): JSX.Element {
   const copyRef = useRef<HTMLButtonElement | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(
+    undefined,
+  );
 
-  // Use the useLocation hook to get the URL search parameters.
-  const useQuery = () => {
-    return new URLSearchParams(useLocation().search);
-  };
-
-  // Use the useSocket hook to get the socket instance.
+  const { search } = useLocation();
   const socket = useSocket();
-
-  // Use the useNavigate hook to navigate to other pages.
   const navigate = useNavigate();
+  const { meetid, username, setMeetid, setUsername, setSocketID } =
+    useMeeting();
+  const { meetType } = useParams<{ meetType: string }>();
 
-  // Use the useMeeting hook to get the meeting context.
-  const { meetid, username, setMeetid, setUsername, setSocketID } = useMeeting();
+  const [newmeet, setNewmeet] = useState<boolean>(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [running, setRunning] = useState<boolean>(false);
+  const [progress, setProgress] = useState<number>(0);
 
-  // Check if the user trying to join or create a new meet.
-  const  { meetType } = useParams<{ meetType: string }>();
+  // Sync mode with URL on initial load
+  useEffect(() => {
+    if (meetType === "join") {
+      setNewmeet(false);
+    } else {
+      setNewmeet(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // States to check if the user is joining or creating a new meet.
-  const [ newmeet, setNewmeet ] = useState<boolean>(false);
-  const [ msg, setMsg ] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  // Use the useQuery hook to get the URL search parameters.
-  const query = useQuery();
+  // Handle Meeting ID Generation / Clearing based on toggle
+  useEffect(() => {
+    if (newmeet) {
+      setMeetid(uuidv4().slice(0, 8));
+    } else {
+      const query = new URLSearchParams(search);
+      const roomid = query.get("roomid");
+      if (roomid) setMeetid(roomid);
+      else setMeetid("");
+    }
+  }, [newmeet, search, setMeetid]);
 
   useEffect(() => {
     if (running) {
-      interval = setInterval(() => {
+      intervalRef.current = setInterval(() => {
         setProgress((prev) => prev + 1);
       }, 50);
     } else {
-      clearInterval(interval);
+      clearInterval(intervalRef.current);
     }
+    return () => clearInterval(intervalRef.current);
   }, [running]);
 
   useEffect(() => {
     if (progress >= 100) {
       setMsg(null);
       setRunning(false);
-      clearInterval(interval);
       setProgress(0);
     }
   }, [progress]);
 
-  const handleProgressClose = () => {
-    setProgress(100);
-  }
+  const handleProgressClose = () => setProgress(100);
 
-  // Set username and meetid if the value exists in session info.
   useEffect(() => {
     const data = getSessionValues();
-    if (data.userName) {
-      setUsername(data.userName);
-    }
+    if (data.userName) setUsername(data.userName);
     if (data.message) {
       setMsg(data.message);
       sessionStorage.removeItem("message");
       setRunning(true);
     }
-  }, []);
+  }, [setUsername]);
 
-  // Handke form submission.
-  const handleSubmit = useCallback( (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (socket) {
-      socket.emit("room:join", {username, meetid, newmeet});
-    }
-  }, [username, meetid])
+  const handleSubmit = useCallback(
+    (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      if (socket) socket.emit("room:join", { username, meetid, newmeet });
+    },
+    [username, meetid, newmeet, socket],
+  );
 
-  // Once the user joins a room, navigate to the room page.
-  const handleJoinRoom = useCallback((data: RoomData) => {
-    const { meetid } = data;
-    navigate(`/room/${meetid}`)
-  }, [navigate]);
+  const handleJoinRoom = useCallback(
+    (data: RoomData) => {
+      navigate(`/room/${data.meetid}`);
+    },
+    [navigate],
+  );
 
-  // Once the user joins a room, set the username, meet ID and socket ID.
-  const handleUserJoin = useCallback((data: RoomData) => {
-    setSessionValues(data.username, data.meetid);
-    setSocketID(data.id);
-    setUsername(data.username);
-    setMeetid(data.meetid);
-  }, [meetid, setSocketID, setUsername]);
+  const handleUserJoin = useCallback(
+    (data: RoomData) => {
+      setSessionValues(data.username, data.meetid);
+      setSocketID(data.id);
+      setUsername(data.username);
+      setMeetid(data.meetid);
+    },
+    [setSocketID, setUsername, setMeetid],
+  );
 
-  const handleRoomJoinError = ({error, message}: {error: string, message: string}) => {
-    console.error(error);
+  const handleRoomJoinError = useCallback(({ message }: JoinRoomError) => {
     setMsg(message);
     setRunning(true);
-  }
+  }, []);
 
-  // Handle socket events.
   useEffect(() => {
     if (socket) {
       socket.on("user:joined", handleUserJoin);
@@ -135,88 +135,211 @@ function Lobby() {
         socket.off("room:join", handleJoinRoom);
         socket.off("error:meet", handleRoomJoinError);
       };
-    };
-  }, [socket, handleJoinRoom]);
-
-  // Generate a new unique meet ID.
-  const generateNewMeetID = () => {
-    setMeetid(uuidv4().slice(0, 8));
-  };
-
-  // If the user is creating a new meet, generate a new unique meet ID.
-  useEffect(() => {
-    if (newmeet) {
-      generateNewMeetID();
     }
-  }, [newmeet]);
+  }, [socket, handleJoinRoom, handleUserJoin, handleRoomJoinError]);
 
-  // Handle copying of the meeting ID to the clipboard using copy button.
   const handleCopy = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-
-    // Copy the meet ID to the clipboard.
-    if (meetid) {
-      navigator.clipboard.writeText(meetid);
-    }
-
-    // Change the copy button text to "copied" for 3 seconds.
-    if (copyRef.current){
-      copyRef.current.innerText = "copied";
-    }
+    if (meetid) navigator.clipboard.writeText(meetid.toUpperCase());
+    if (copyRef.current) copyRef.current.innerText = "[ Copied! ]";
     setTimeout(() => {
-      if (copyRef.current){
-        copyRef.current.innerText = "copy";
-      }
-    }, 3000)
-  }
-
-  // Set the meet ID if the user is joining a meet.
-  useEffect(() => {
-
-    // If the user is joining a meet handle join meet states.
-    if (meetType == "join") {
-      setNewmeet(false);
-      const roomid = query.get('roomid');
-
-      // If the user is joining a meet, set the meet ID.
-      if (roomid) {
-        setMeetid(roomid);
-      }
-    } else { // If the user is creating a new meet, set the newmeet state to true.
-      setNewmeet(true);
-    }
-  }, [meetType]);
+      if (copyRef.current) copyRef.current.innerText = "[ Copy ID ]";
+    }, 3000);
+  };
 
   return (
-    <div>
-      {running &&
-        <div className="border-2 border-violet-500 absolute right-6 sm:right-2 top-20 sm:top-2 py-2">
-          <span style={{width: progress+"%"}} className={`absolute bg-violet-500 -z-10 h-full top-0 left-0`}></span>
-          <span className="px-4 py-2">{msg}</span>
-          <button className="px-4 py-2 text-red-700 font-black" onClick={handleProgressClose}>X</button>
+    <div className="min-h-screen bg-[#0a0a0a] text-[#f0ede8] font-['Syne',sans-serif] relative overflow-hidden grid grid-rows-[auto_1fr_auto]">
+      {/* Background Grid */}
+      <div className="absolute inset-0 z-0 pointer-events-none bg-[linear-gradient(rgba(240,237,232,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(240,237,232,0.025)_1px,transparent_1px)] bg-[size:80px_80px]" />
+
+      {/* Toast */}
+      {running && msg && (
+        <div className="fixed top-20 right-6 border-[0.5px] border-[#f0ede8]/[0.18] bg-[#0f0f0f] w-[300px] z-50 overflow-hidden">
+          <div className="p-3.5 flex justify-between items-center gap-3">
+            <span className="text-[13px] text-[#f0ede8] font-['Syne',sans-serif] leading-[1.5]">
+              {msg}
+            </span>
+            <button
+              className="bg-transparent border-none cursor-pointer text-[#f0ede8]/35 p-0 shrink-0 transition-colors duration-150 flex hover:text-[#f0ede8]/80"
+              onClick={handleProgressClose}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div
+            className="h-[1.5px] bg-[#f0ede8]/60 transition-[width] duration-75 ease-linear"
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      }
-      <h1 className="text-[3rem] font-black text-left">
-        <span className=" bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">YooTwo</span>
-      </h1>
-      <div className='flex justify-center align-center min-h-screen md:px-56 lg:px-0'>
-        <div className="w-full min-h-screen flex justify-center items-center">
-          <div className="shadw w-[95%] lg:w-1/2 bg-zinc-800 px-4 xl:px-32 py-16 border-zinc-300">
-            <h1 className="text-6xl md:text-8xl text-center pb-6 border-b-2 border-zinc-700"> {newmeet ? "Create new room!" : "Join room!"} </h1>
-            <form action="submit" className="p-0 sm:p-10 mt-8 flex flex-col gap-8" onSubmit={(e) => handleSubmit(e)}>
-              <div className="w-full flex flex-col relative">
-                <label className="text-black font-black bg-zinc-300 px-10 relative" htmlFor="name">Name <span className="absolute right-5 text-zinc-800">required</span></label>
-                <input className="px-10 py-8" id="name" type="name" required placeholder="Enter your name..." autoComplete="off" onChange={(e) => setUsername(e.target.value)} value={username ?? ""}/>
-              </div>
-              <div className="w-full flex flex-col relative">
-                <label className="left-5 text-black font-black bg-zinc-300 px-10" htmlFor="code">Meet ID <span className={`${ !newmeet ? 'inline-block' : 'hidden' } absolute right-5 text-zinc-800`}>required</span><span className={`${newmeet ? 'inline-block' : 'hidden' } absolute right-px text-zinc-800`}> <button ref={copyRef} onClick={(e) => handleCopy(e)} type="button" className="px-4 py-0 mt-px bg-zinc-700 text-zinc-300 hover:bg-zinc-300 hover:text-zinc-700 transition-all">copy</button></span></label>
-                <input className="px-10 py-8" id="code" type="name" value={meetid ?? ""} onChange={(e) => setMeetid(e.target.value) } placeholder="Enter the room ID..." required disabled={newmeet} />
-              </div>
-              <button className="px-10 py-8" id="button" type="submit">{ newmeet ? "Create" : "Join" }</button>
-            </form>
+      )}
+
+      {/* Nav */}
+      <nav className="relative z-10 flex items-center justify-between py-7 px-6 md:px-12 border-b-[0.5px] border-[#f0ede8]/10">
+        <Link
+          to="/"
+          className="font-['DM_Serif_Display',serif] text-3xl md:text-6xl font-black tracking-[-0.5px] text-[#f0ede8] no-underline transition-opacity duration-150 hover:opacity-70"
+        >
+          YooTwo
+        </Link>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 font-['DM_Mono',monospace] text-[11px] font-light tracking-[0.15em] uppercase text-[#f0ede8]/35 no-underline transition-colors duration-150 hover:text-[#f0ede8]/70 group"
+        >
+          <svg
+            className="transition-transform duration-150 group-hover:-translate-x-[3px]"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M19 12H5M5 12l7-7M5 12l7 7" />
+          </svg>
+          Back to home
+        </Link>
+      </nav>
+
+      {/* Main */}
+      <main className="relative z-10 flex items-center justify-center py-[60px] px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_480px] gap-0 w-full max-w-[480px] lg:max-w-[1040px] lg:min-h-[480px]">
+          
+          {/* Left — Big Toggle Buttons */}
+          <div className="flex flex-col justify-center gap-8 lg:gap-16 pr-0 lg:pr-20 mb-16 lg:mb-0">
+            <button
+              type="button"
+              onClick={() => setNewmeet(true)}
+              className={`text-left group relative transition-all duration-500 ease-out flex flex-col ${
+                newmeet
+                  ? "opacity-100 lg:translate-x-4"
+                  : "opacity-25 hover:opacity-60 lg:hover:translate-x-2"
+              }`}
+            >
+              <span className={`font-['DM_Mono',monospace] text-[10px] uppercase mb-2 md:mb-4 tracking-[0.2em] transition-all duration-500 ${newmeet ? "text-[#f0ede8]/60" : "text-[#f0ede8]/40"}`}>
+                01 — Host a session
+              </span>
+              <h1 className="font-['DM_Serif_Display',serif] text-[clamp(48px,5vw,84px)] leading-none tracking-[-2px] text-[#f0ede8] m-0">
+                Create Room.
+              </h1>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setNewmeet(false)}
+              className={`text-left group relative transition-all duration-500 ease-out flex flex-col ${
+                !newmeet
+                  ? "opacity-100 lg:translate-x-4"
+                  : "opacity-25 hover:opacity-60 lg:hover:translate-x-2"
+              }`}
+            >
+              <span className={`font-['DM_Mono',monospace] text-[10px] uppercase mb-2 md:mb-4 tracking-[0.2em] transition-all duration-500 ${!newmeet ? "text-[#f0ede8]/60" : "text-[#f0ede8]/40"}`}>
+                02 — Join a session
+              </span>
+              <h1 className="font-['DM_Serif_Display',serif] text-[clamp(48px,5vw,84px)] leading-none tracking-[-2px] text-[#f0ede8] m-0">
+                Join Room.
+              </h1>
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="hidden lg:block w-[0.5px] self-stretch bg-[#f0ede8]/10" />
+
+          {/* Right — form */}
+          <div className="flex flex-col justify-center gap-8 px-6 py-10 lg:px-16 lg:py-16 border border-neutral-600/50 relative bg-[#0a0a0a]">
+            {/* Subtle glow/shadow for depth */}
+            <div className="absolute inset-0 z-[-1] shadow-[0_0_60px_-15px_rgba(240,237,232,0.05)] pointer-events-none" />
+
+            <div className="pb-7 border-b-[0.5px] border-[#f0ede8]/10">
+              
+              <h2 className="font-['Syne',sans-serif] font-black text-[38px] leading-[1.05] tracking-[-1px] text-[#f0ede8] m-0">
+                {newmeet ? "Start." : "Enter."}
+              </h2>
             </div>
+
+            <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+              <div className="flex flex-col gap-2.5">
+                <label
+                  htmlFor="lb-name"
+                  className="font-['DM_Mono',monospace] text-[10px] tracking-[0.15em] uppercase text-[#f0ede8]/40"
+                >
+                  Display Name
+                </label>
+                <input
+                  id="lb-name"
+                  type="text"
+                  required
+                  placeholder="e.g. John Doe"
+                  autoComplete="off"
+                  onChange={(e) => setUsername(e.target.value)}
+                  value={username ?? ""}
+                  className="w-full bg-transparent border-[0.5px] border-[#f0ede8]/15 px-4 py-3.5 text-[#f0ede8] font-['Syne',sans-serif] text-[15px] outline-none transition-colors duration-150 placeholder-[#f0ede8]/25 focus:border-[#f0ede8]/50"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <div className="flex justify-between items-center">
+                  <label
+                    htmlFor="lb-code"
+                    className="font-['DM_Mono',monospace] text-[10px] tracking-[0.15em] uppercase text-[#f0ede8]/40"
+                  >
+                    Meeting ID
+                  </label>
+                  {newmeet && (
+                    <button
+                      ref={copyRef}
+                      onClick={handleCopy}
+                      type="button"
+                      className="font-['DM_Mono',monospace] text-[10px] tracking-[0.1em] uppercase text-[#f0ede8]/50 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-[#f0ede8]"
+                    >
+                      [ Copy ID ]
+                    </button>
+                  )}
+                </div>
+                <input
+                  id="lb-code"
+                  type="text"
+                  value={meetid ?? ""}
+                  onChange={(e) => setMeetid(e.target.value)}
+                  placeholder="Enter room ID"
+                  required
+                  disabled={newmeet}
+                  className={`w-full bg-transparent border-[0.5px] border-[#f0ede8]/15 px-4 py-3.5 text-[#f0ede8] text-[15px] outline-none transition-colors duration-150 placeholder-[#f0ede8]/25 focus:border-[#f0ede8]/50 uppercase tracking-[0.05em] disabled:opacity-45 disabled:cursor-not-allowed disabled:bg-[#f0ede8]/[0.03]`}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="mt-4 inline-flex items-center justify-center font-['Syne',sans-serif] text-[13px] font-bold tracking-[0.08em] uppercase text-[#0a0a0a] bg-[#f0ede8] border-[0.5px] border-transparent py-4 px-6 cursor-pointer transition-colors duration-150 w-full hover:bg-white"
+              >
+                {newmeet ? "Launch Session" : "Join Session"}
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="relative z-10 py-4 px-6 md:py-5 md:px-12 border-t-[0.5px] border-[#f0ede8]/[0.08] flex justify-between items-center">
+        <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.06em] text-[#f0ede8]/[0.18]">
+          &copy; {new Date().getFullYear()} YooTwo
+        </span>
+        <span className="font-['DM_Mono',monospace] text-[10px] tracking-[0.06em] text-[#f0ede8]/[0.18]">
+          Built by imvbhargav
+        </span>
+      </footer>
     </div>
   );
 }

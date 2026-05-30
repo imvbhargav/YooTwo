@@ -1,31 +1,22 @@
+import React from "react";
+
 interface OverlayControlsProps {
-  // Video state
   playVideo: boolean;
   muted: boolean;
   setMuted: (muted: boolean) => void;
   loop: boolean;
   volume: number;
-
-  // Progress state
   videoProgress: number;
   videoLoaded: number;
   playedSecs: string;
   totalDuration: string;
-
-  // Video source state
   fileExists: boolean;
   videoID: string;
-
-  // Buffer state
   remoteBuffering: boolean;
-
-  // Event handlers
   handleForcePlay: (enable: boolean) => void;
-  handleVolumeChange: ({ target }: { target: HTMLInputElement }) => void;
-  handleSeekVideo: (event: any) => void;
+  handleVolumeChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleSeekVideo: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleLoopChange: () => void;
-
-  // Remote state
   remoteUsername: string | null;
 }
 
@@ -46,35 +37,119 @@ const OverlayControls: React.FC<OverlayControlsProps> = ({
   handleVolumeChange,
   handleSeekVideo,
   handleLoopChange,
-  remoteUsername
+  remoteUsername,
 }) => {
   return (
-    <div className={`${!playVideo || remoteBuffering ? "opacity-100 bg-no-repeat bg-cover bg-transparent" : "opacity-0 hover:opacity-100"} absolute w-full h-full top-0 left-0 outline-none border-none`}
-        style={ (!playVideo || remoteBuffering) && !fileExists ? {backgroundImage: `url("https://img.youtube.com/vi/${videoID}/maxresdefault.jpg")`} : {}}>
-      <button className="w-full h-full bg-black/20" onClick={() => handleForcePlay(!playVideo)}></button>
-      {(!playVideo || remoteBuffering) && <p className="bg-[blueviolet] pointer-events-none text-white absolute text-center w-full top-0 py-4"><strong className="animate-pulse">{ playVideo && remoteBuffering ? `${remoteUsername}'s buffering, Force play!` : "Video is paused, Click to play!"}</strong></p>}
-      <div className="w-full absolute bottom-0 flex flex-col-reverse">
-        <div className="flex w-full justify-between bg-black/75">
-          <p className="bg-transparent text-white text-left w-max bottom-0 p-4 text-sm sm:text-2xl">{playedSecs + " / " + totalDuration}</p>
-          <p className="bg-transparent text-white text-left w-max bottom-0 p-4 text-sm sm:text-2xl"><span className="text-zinc-400 animate-pulse">Quality: Auto</span></p>
-          <div className="flex justify-end">
-            <button className={`bg-transparent text-white text-left w-max bottom-0 p-2 sm:p-4 outline-none border-none text-sm sm:text-2xl md:min-w-32 ${loop ? "" : "line-through decoration-pink-500 decoration-4"}`} onClick={handleLoopChange}>Loop</button>
-            <button className={`bg-transparent text-white text-left w-max bottom-0 p-2 sm:p-4 outline-none border-none text-sm sm:text-2xl md:min-w-32 ${muted ? "line-through decoration-pink-500 decoration-4" : ""}`} onClick={() => setMuted(!muted)}>Audio</button>
-            <div className="flex items-center justify-center w-1/2 md:w-full mr-4">
-              <input className='range_slider' type="range" min="1" max="100" value={volume} onChange={handleVolumeChange} />
+    <div
+      className={`${
+        !playVideo || remoteBuffering
+          ? "opacity-100 bg-black/60"
+          : "opacity-0 hover:opacity-100 bg-gradient-to-t from-black/80 via-transparent to-transparent"
+      } absolute inset-0 w-full h-full transition-all duration-300 z-10 flex flex-col justify-between`}
+      style={
+        (!playVideo || remoteBuffering) && !fileExists
+          ? {
+              backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.4)), url("https://img.youtube.com/vi/${videoID}/maxresdefault.jpg")`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }
+          : {}
+      }
+    >
+      {/* Clickable Area to Toggle Play/Pause */}
+      <button
+        className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
+        onClick={() => handleForcePlay(!playVideo)}
+        aria-label="Toggle Play"
+      />
+
+      {/* Top Status Indicator */}
+      <div className="w-full flex justify-center pt-8 pointer-events-none z-20">
+        {(!playVideo || remoteBuffering) && (
+          <div className="border border-white/20 bg-black/60 backdrop-blur-sm px-4 py-2 shadow-2xl">
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.2em] uppercase text-white/90 animate-pulse">
+              {playVideo && remoteBuffering
+                ? `[ ${remoteUsername} is buffering ]`
+                : "[ Paused — Click to play ]"}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Controls */}
+      <div className="w-full flex flex-col z-20 mt-auto">
+        {/* Progress Bar (Custom Brutalist implementation) */}
+        <div className="w-full h-[3px] bg-white/10 hover:h-2 transition-all relative group cursor-pointer">
+          {/* Loaded Buffer Line */}
+          <div
+            className="absolute top-0 left-0 h-full bg-white/30"
+            style={{ width: `${videoLoaded}%` }}
+          />
+          {/* Current Progress Line */}
+          <div
+            className="absolute top-0 left-0 h-full bg-[#f0ede8]"
+            style={{ width: `${videoProgress}%` }}
+          />
+          {/* Invisible Range Input for Interaction */}
+          <input
+            type="range"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer m-0 p-0"
+            min="1"
+            max="100"
+            value={videoProgress}
+            onChange={handleSeekVideo}
+          />
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-6 py-4 bg-black/40 backdrop-blur-sm border-t border-white/[0.05]">
+          {/* Left: Time & Quality */}
+          <div className="flex items-center gap-6">
+            <span className="font-['DM_Mono',monospace] text-[11px] tracking-[0.1em] text-[#f0ede8]">
+              {playedSecs} <span className="text-white/30 mx-1">/</span>{" "}
+              <span className="text-white/60">{totalDuration}</span>
+            </span>
+            <span className="font-['DM_Mono',monospace] text-[9px] tracking-[0.15em] uppercase text-white/40 border border-white/10 px-2 py-0.5">
+              Auto
+            </span>
+          </div>
+
+          {/* Right: Audio, Loop, Volume */}
+          <div className="flex items-center gap-6">
+            <button
+              onClick={handleLoopChange}
+              className={`font-['DM_Mono',monospace] text-[10px] tracking-[0.15em] uppercase transition-colors hover:text-white ${
+                loop ? "text-[#f0ede8]" : "text-white/30"
+              }`}
+            >
+              [ Loop: {loop ? "On" : "Off"} ]
+            </button>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setMuted(!muted)}
+                className={`font-['DM_Mono',monospace] text-[10px] tracking-[0.15em] uppercase transition-colors hover:text-white ${
+                  muted ? "text-red-400" : "text-[#f0ede8]"
+                }`}
+              >
+                [ {muted ? "Muted" : "Audio"} ]
+              </button>
+              
+              {/* Custom Volume Slider */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={handleVolumeChange}
+                className="w-20 h-0.5 bg-white/20 appearance-none outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-[#f0ede8]"
+              />
             </div>
           </div>
         </div>
-        <div className="w-full h-2 bg-gray-800 overflow-hidden hover:h-4 relative">
-          <span style={{width: `${videoLoaded}%`}} className="h-4 block bottom-14 bg-gray-300">
-            <div className="flex items-center justify-center w-full absolute top-0 opacity-70">
-              <input className='range_slider_video' type="range" min="1" max="100" value={videoProgress} onChange={handleSeekVideo} />
-            </div>
-          </span>
-        </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 export default OverlayControls;

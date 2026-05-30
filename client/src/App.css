@@ -1,134 +1,58 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;400;600;700&family=Inter:wght@300;400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400&family=Syne:wght@400;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-.shadw {
-  box-shadow: 0 -10px 0 #d4d4d8;
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-50 font-sans antialiased;
+    font-family: "Inter", sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Fraunces", serif;
+  }
 }
 
-form > div > input {
-  background-color: #1e1e1e;
-  color: #d4d4d8;
-  border: 2px solid #d4d4d8;
-  font-size: 1.8rem;
+@layer components {
+  /* Used in Lobby.tsx and Room.tsx */
+  .glass-panel {
+    @apply bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 shadow-2xl;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl bg-zinc-100 text-zinc-900 font-semibold hover:bg-zinc-300 transition-all active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl bg-zinc-800/50 border border-zinc-700 text-zinc-300 font-semibold hover:bg-zinc-800 hover:text-zinc-100 transition-all active:scale-95;
+  }
+
+  .input-field {
+    @apply w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all;
+  }
 }
 
-form > button {
-  background-color: #1e1e1e;
-  color: #d4d4d8;
-  font-size: 1.8rem;
-  border: 2px solid #d4d4d8;
-  cursor: pointer;
+/* Custom Sliders for Room.tsx overlay controls */
+.range_slider,
+.range_slider_video {
+  @apply w-full h-2 bg-zinc-800 rounded-full appearance-none outline-none overflow-hidden cursor-pointer;
 }
 
-form > button:hover {
-  background-color: #d4d4d8;
-  color: #1e1e1e;
-  border: 2px solid transparent;
+.range_slider::-webkit-slider-thumb,
+.range_slider_video::-webkit-slider-thumb {
+  @apply appearance-none w-0 h-0;
+  box-shadow: -1500px 0 0 1500px theme("colors.indigo.500");
 }
 
-form > div > input:disabled {
-  background-color: #000;
-  color: #fff;
-}
-
-form > div > input:hover,
-form > div > input:focus,
-form > div > input:active  {
-  border: 2px solid #d4d4d8;
-  outline: none;
-}
-
-form > div > input:focus,
-form > div > input:active {
-  background-color: #d4d4d8;
-  color: #1e1e1e;
-}
-
-form > div > input:disabled:focus,
-form > div > input:disabled:active {
-  background-color: #000;
-  color: #fff;
-  border: 2px solid #d4d4d8;
-}
-
-form > div > input:focus::placeholder,
-form > input:focus::placeholder {
-  color: transparent;
-}
-
-form > input:hover,
-form > input:focus,
-form > input:active {
-  outline: none;
-  border: none;
-}
-
+/* Hide YouTube player buttons in Room.tsx */
 .ytp-youtube-button {
   display: none !important;
-}
-
-.range_slider{
-  overflow: hidden;
-  -webkit-appearance: none;  /* Override default CSS styles */
-  appearance: none;
-  width: 100%; /* Full-width */
-  height: 10px; /* Specified height */
-  background: #202020; /* Grey background */
-  outline: none; /* Remove outline */
-  -webkit-transition: .2s; /* 0.2 seconds transition on hover */
-  transition: opacity .2s;
-  border-radius: 34px;
-}
-
-.range_slider::-webkit-slider-thumb {
-  -webkit-appearance: none; /* Override default look */
-  appearance: none;
-  width: 0.2em; /* Set a specific slider handle width */
-  height: 15px; /* Slider handle height */
-  background: blueviolet; /* Green background */
-  cursor: pointer; /* Cursor on hover */
-  border-radius: 34px;
-  box-shadow: -150px 0 0 150px blueviolet;
-}
-
-.range_slider::-moz-range-thumb {
-  width: 1px; /* Set a specific slider handle width */
-  height: 25px; /* Slider handle height */
-  background: blueviolet; /* Green background */
-  cursor: pointer; /* Cursor on hover */
-  border-radius: 34px;
-  box-shadow: -150px 0 0 150px blueviolet;
-}
-
-
-
-.range_slider_video{
-  overflow: hidden;
-  -webkit-appearance: none;  /* Override default CSS styles */
-  appearance: none;
-  width: 100%; /* Full-width */
-  height: 25px; /* Specified height */
-  background: #202020; /* Grey background */
-  outline: none; /* Remove outline */
-  -webkit-transition: .2s; /* 0.2 seconds transition on hover */
-  transition: opacity .2s;
-}
-
-.range_slider_video::-webkit-slider-thumb {
-  -webkit-appearance: none; /* Override default look */
-  appearance: none;
-  width: 0.2em; /* Set a specific slider handle width */
-  height: 25px; /* Slider handle height */
-  background: rgb(236 72 153); /* Green background */
-  cursor: pointer; /* Cursor on hover */
-  box-shadow: -1500px 0 0 1500px rgb(236 72 153);
-}
-
-.range_slider_video::-moz-range-thumb {
-  width: 1px; /* Set a specific slider handle width */
-  height: 25px; /* Slider handle height */
-  background: rgb(236 72 153); /* Green background */
-  cursor: pointer; /* Cursor on hover */
-  box-shadow: -1500px 0 0 1500px rgb(236 72 153);
 }

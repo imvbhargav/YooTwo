@@ -1,15 +1,22 @@
-import { createContext, useContext, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { DefaultEventsMap } from '@socket.io/component-emitter';
 
-const socketContext = createContext<Socket<DefaultEventsMap, DefaultEventsMap> | null>(null);
+// Use the base Socket type directly from socket.io-client
+const socketContext = createContext<Socket | null>(null);
 
-export const useSocket = () => {
-  const socket = useContext(socketContext);
-  return socket;
+// Disable the fast-refresh rule here, as grouping a Context Provider 
+// and its custom hook is an industry-standard pattern.
+// eslint-disable-next-line react-refresh/only-export-components
+export const useSocket = (): Socket | null => {
+  return useContext(socketContext);
 };
 
-export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface SocketProviderProps {
+  children: ReactNode;
+}
+
+export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
+  // Initialize the socket connection
   const socket = useMemo(() => io("https://silent-brenna-bhargav-personal-bcce1eac.koyeb.app/"), []);
 
   // Cleanup on unmount
@@ -23,5 +30,5 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <socketContext.Provider value={socket}>
       {children}
     </socketContext.Provider>
-  )
+  );
 };

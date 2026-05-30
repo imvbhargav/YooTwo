@@ -1,5 +1,4 @@
 class PeerService {
-
   public peer: RTCPeerConnection | null = null;
   public dataChannel: RTCDataChannel | null = null;
 
@@ -7,7 +6,7 @@ class PeerService {
     this.createPeer();
   }
 
-  private createPeer() {
+  private createPeer(): void {
     this.peer = new RTCPeerConnection({
       iceServers: [
         {
@@ -30,8 +29,8 @@ class PeerService {
       const ans = await this.peer.createAnswer();
       await this.peer.setLocalDescription(new RTCSessionDescription(ans));
       return ans;
-    } catch (error) {
-      throw new Error(`Failed to create answer: ${error}`);
+    } catch (error: unknown) {
+      throw new Error(`Failed to create answer: ${(error as Error).message}`);
     }
   }
 
@@ -42,8 +41,8 @@ class PeerService {
 
     try {
       await this.peer.setRemoteDescription(ans);
-    } catch (error) {
-      throw new Error(`Failed to set remote description: ${error}`);
+    } catch (error: unknown) {
+      throw new Error(`Failed to set remote description: ${(error as Error).message}`);
     }
   }
 
@@ -56,8 +55,8 @@ class PeerService {
       const offer = await this.peer.createOffer();
       await this.peer.setLocalDescription(new RTCSessionDescription(offer));
       return offer;
-    } catch (error) {
-      throw new Error(`Failed to create offer: ${error}`);
+    } catch (error: unknown) {
+      throw new Error(`Failed to create offer: ${(error as Error).message}`);
     }
   }
 
@@ -70,10 +69,7 @@ class PeerService {
   }
 
   resetPeer(): void {
-    // Clean up the existing peer
     this.cleanup();
-
-    // Reinitialize the peer object
     this.createPeer();
   }
 }
