@@ -17,7 +17,7 @@ interface SocketProviderProps {
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   // Initialize the socket connection
-  const socket = useMemo(() => io("https://silent-brenna-bhargav-personal-bcce1eac.koyeb.app/"), []);
+  const socket = useMemo(() => io("https://likely-yolane-bhargav-personal-3debfe3d.koyeb.app/"), []);
 
   // Cleanup on unmount
   useEffect(() => {
