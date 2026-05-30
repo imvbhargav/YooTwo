@@ -8,7 +8,7 @@ interface SocketProviderProps {
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
-  const socket = useMemo(() => io("http://10.152.141.70:8000", {
+  const socket = useMemo(() => io("likely-yolane-bhargav-personal-3debfe3d.koyeb.app/", {
     transports: ['websocket'],
   }), []);
 
