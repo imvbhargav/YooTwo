@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { useParams, useLocation, useNavigate, Link } from "react-router-dom";
-import { useSocket } from "../context/SocketProvider";
+import { useSocket } from "../context/SocketContext";
 import { useMeeting } from "../context/MeetingContext";
 import { v4 as uuidv4 } from "uuid";
 import { RoomData, JoinRoomError } from "../types";

@@ -1,25 +1,17 @@
-import React, { createContext, useContext, useEffect, useMemo, ReactNode } from 'react';
-import { io, Socket } from 'socket.io-client';
+import React, { useEffect, useMemo, ReactNode } from 'react';
+import { io } from 'socket.io-client';
+import { SocketContext } from './SocketContext';
 
-// Use the base Socket type directly from socket.io-client
-const socketContext = createContext<Socket | null>(null);
-
-// Disable the fast-refresh rule here, as grouping a Context Provider 
-// and its custom hook is an industry-standard pattern.
-// eslint-disable-next-line react-refresh/only-export-components
-export const useSocket = (): Socket | null => {
-  return useContext(socketContext);
-};
 
 interface SocketProviderProps {
   children: ReactNode;
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
-  // Initialize the socket connection
-  const socket = useMemo(() => io("https://likely-yolane-bhargav-personal-3debfe3d.koyeb.app/"), []);
+  const socket = useMemo(() => io("http://10.152.141.70:8000", {
+    transports: ['websocket'],
+  }), []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       socket.disconnect();
@@ -27,8 +19,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   }, [socket]);
 
   return (
-    <socketContext.Provider value={socket}>
+    <SocketContext.Provider value={socket}>
       {children}
-    </socketContext.Provider>
+    </SocketContext.Provider>
   );
 };

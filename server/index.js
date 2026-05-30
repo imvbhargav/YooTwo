@@ -28,6 +28,9 @@ const socketIDToMeetIDMap = new Map();
 
 io.on("connection", (socket) => {
   socket.on("room:join", (data) => {
+
+	data.meetid = data.meetid.toLowerCase();
+	
     const { username, meetid } = data;
     const roomInfo = io.sockets.adapter.rooms.get(meetid);
 
@@ -56,8 +59,15 @@ io.on("connection", (socket) => {
       `User ${username} with socket ID ${socket.id} joined meet ${meetid}.`,
     );
 
-    io.to(meetid).emit("user:joined", { username, id: socket.id, meetid });
     io.to(socket.id).emit("room:join", data);
+  });
+
+  socket.on("peer:ready", (data) => {
+    socket.to(data.room).emit("user:joined", {
+      username: data.username,
+      id: socket.id,
+      meetid: data.room,
+    });
   });
 
   socket.on("user:accepted", (data) => {
