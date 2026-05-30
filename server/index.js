@@ -11,7 +11,11 @@ app.get("/", (req, res) => {
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: [
+      "https://yootwo.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
     methods: ["GET", "POST"],
     credentials: true,
     transports: ["websocket", "polling"],
@@ -100,6 +104,8 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(8000, () => {
-  console.log("Server is running on port: 8000");
+const PORT = process.env.PORT || 8000;
+
+server.listen(PORT, () => {
+  console.log(`Server is running on port: ${PORT}`);
 });
